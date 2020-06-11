@@ -1,0 +1,129 @@
+---
+title: "Practical_machine_learning_peer_graded_assignment"
+author: "Vikash Patel"
+date: "11/06/2020"
+output: html_document
+---
+```{r}
+#Loading the required libraries
+library(knitr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(corrplot)
+library(caTools)
+```
+I have called all the required libraries that I will need for my classification assignment.
+
+```{r}
+#For reproducibilty
+set.seed(251996)
+```
+For reproducibility of result,I have set the see at 251996
+```{r}
+#Getting the url of training and test dataset
+train_url="http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test_url="http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+#downloading into csv file
+training_set =read.csv(url(train_url))
+testing_set = read.csv(url(test_url))
+attach(training_set)
+```
+I have loaded the training and testing dataset from the desired url location.And then converted into a csv file so that R can perform its application.
+I have also used attach(),so that I can refer to the the features of dataset with their name only.
+```{r}
+#Creating a partition in training set
+sample=sample.split(training_set,SplitRatio = 0.75)
+train_set=subset(training_set,sample==T)
+test_set=subset(training_set,sample==F)
+dim(train_set)
+dim(test_set)
+```
+
+I have used library caTools to create a partition in the training dataset.Our new train_set has 14713 rows and 160 coloumn.While,test_set has 4909 rows and 160 columns.
+
+```{r}
+#pre-processing of data
+NZV=nearZeroVar(train_set)
+train_set=train_set[,-NZV]
+test_set=test_set[,-NZV]
+#Removing the variables which relates to the identity of individual including ID
+train_set=train_set[,-(1:5)]
+test_set=test_set[,-c(1:5)]
+str(train_set)
+#Many vairables only have NA in it,so we will remove those variables
+OnlyNA= sapply(train_set, function(x) mean(is.na(x))) > 0.95
+train_set =train_set[, OnlyNA==FALSE]
+test_set= test_set[, OnlyNA==FALSE]
+str(train_set)
+dim(train_set)
+```
+Given data is raw and has lots of messiness in it.So, I took few steps to clean it.
+1)Removed all the variables which have zero or near zero variance in it.Doing so,I removed 58 variables from our dataset.
+2.)There are few variables which contain personal details of each individual and does not give any meaningful insight to our model and anaylsis.So,I removed first  variables.
+3.)After performing above two steps,I found out that lots of variables have lots of NA values in their column.So,I removed all the variables in which more than 95% of the data contain NA.
+
+```{r}
+#I look for correlation between our features using corrplot()
+cordata=cor(train_set[,-54])
+corrplot(cordata,order = "FPC",method = "color",
+         type = "lower",tl.cex = 0.9,tl.col = rgb(0,0,0))
+```
+
+The cell with darkner color reprsent high correlation.We can see that only few variables have high correlation.
+The model I am going to use is,is a tree-based model.So,high correlation does not affect the accuracy of our model.
+
+```{r}
+#I will start with decision tree
+set.seed(251996)
+Decision_tree=train(classe~.,data = train_set,method="rpart")
+```
+I have used train() funtion from the Caret package for my decision tree model.
+
+```{r}
+#So,now we have planted an individual tree, we will use fancy plot from 
+fancyRpartPlot(Decision_tree$finalModel,main = "Decison Tree",
+               type = 2)
+```
+So,with rpart ,I have grown a tree on the given dataset.
+
+```{r}
+#Prediction on test data
+pred_DT=predict(Decision_tree,newdata = test_set)
+confusionMatrix(pred_DT,test_set$classe)
+```
+I have used the decision tree model to predict the classe of the test data that I created.
+Overall accuracy is just 0.4852.Which is totally unsatisfactory.Even the upper confidence interval dones not cross the the 50% threshold.
+Kappa statistics,which calculates the agreement is also very low,at 0.3267.
+If,we go by class statistics.Predition for few classes has been good while the prediction for some classes are disastrous.
+This was a result by a single tree.
+Now I will grow a forest by using Random Forest algorithm.Which used bootstrapping aggregated method to calculate the prediction of classes.
+
+```{r}
+set.seed(251996)
+RF_control=trainControl(method = "cv",number = 4,verboseIter = F)
+RF_model=train(classe~.,data = train_set,method="rf",
+               trControl=RF_control)
+varImp(RF_model)
+```
+Before buidling the Random Forest model,I set up a training paramter for the model.I used 3-fold cross validation method to generate the model.
+After that,I used train() function from caret package to build the randome forest model with method="rf".
+RF_model contains our model information.
+With varImp(),I have calculated the important variable in our model.Important important variables here means which variables have been used most in each tree of the forest.Num_window and roll_belt are our top two variables here.
+
+```{r}
+#Predition on test data using random forest model
+pred_RF=predict(RF_model,newdata = test_set)
+confusionMatrix(pred_RF,test_set$classe)
+```
+We build the random forest on our training set.Now,I have used the test_set to measure the performance of RF_model.
+I must say,Random Forest model has performed magnificently well here.The overall accuracy is 0.9982 and the kappa statistics is 0.9977.
+Our upper and lower confidence interval is in 0.99s only.Which suggest that our model has very low variance in it.Which is a good news.
+
+```{r}
+#Using the model to predict the classe variable in the testing data which has 20 rows.
+predictTest=predict(RF_model,newdata = testing_set)
+predictTest
+```
+I used tree based model for this project.Decision Tree does not worked well this dataset.So,I used the Random Forest model which gave tremendous result.
